@@ -1,0 +1,21 @@
+# skills.md §9.1 - keep secrets, VCS data and build noise out of image build contexts.
+.git
+.github
+.env
+.env.*
+**/*.pem
+**/*.key
+**/*.pfx
+**/*.p12
+**/*.tfstate*
+**/.terraform
+**/terraform.tfvars
+**/node_modules
+**/__pycache__
+**/*.sarif
+docs
+tests
+**/test
+**/tests
+.security
+skills.md

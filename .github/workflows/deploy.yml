@@ -1,0 +1,166 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Container Security"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, staging, prod]
+        required: true
+      digest:
+        description: "Image digest to deploy (sha256:...) - must already be in the dev ACR"
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  resolve:
+    name: Resolve artifact
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      digest: ${{ steps.out.outputs.digest }}
+      environment: ${{ steps.out.outputs.environment }}
+    steps:
+      - name: Download digest from triggering run
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: image-digest
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - id: out
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_DIGEST: ${{ inputs.digest }}
+          INPUT_ENV: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_run" ]; then digest=$(tr -d '[:space:]' < image-digest.txt); env=dev
+          else digest="$INPUT_DIGEST"; env="$INPUT_ENV"; fi
+          if ! [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then echo "::error::Invalid digest"; exit 1; fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "environment=$env" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy to ${{ needs.resolve.outputs.environment }}
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ needs.resolve.outputs.environment }}
+      url: ${{ vars.APP_HEALTH_URL }}
+    concurrency:
+      group: deploy-${{ needs.resolve.outputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+      attestations: read
+    env:
+      DIGEST: ${{ needs.resolve.outputs.digest }}
+      TARGET_ENV: ${{ needs.resolve.outputs.environment }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      PROD_ACR_NAME: ${{ vars.PROD_ACR_NAME }}
+      IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+
+      - name: Azure login (OIDC, environment-scoped identity)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Registry login
+        run: az acr login --name "$ACR_NAME" > /dev/null
+
+      - name: Verify build provenance and SBOM attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ref="oci://${ACR_NAME}.azurecr.io/${IMAGE_NAME}@${DIGEST}"
+          gh attestation verify "$ref" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/container-security.yml" > /dev/null
+          gh attestation verify "$ref" --repo "$GITHUB_REPOSITORY" \
+            --predicate-type "https://spdx.dev/Document/v2.3" > /dev/null
+          echo "Provenance and SBOM attestations verified for ${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate exception register
+        run: |
+          python -m pip install --disable-pip-version-check "pyyaml==6.*"
+          python .github/scripts/validate_exceptions.py
+
+      - name: Release vulnerability gate
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: ${{ vars.ACR_NAME }}.azurecr.io/${{ vars.IMAGE_NAME }}@${{ needs.resolve.outputs.digest }}
+          trivy-config: trivy.yaml
+          scanners: vuln,secret
+          severity: ${{ vars.SEC_RELEASE_FAIL_SEVERITY || 'CRITICAL,HIGH' }}
+          ignore-unfixed: ${{ vars.SEC_RELEASE_IGNORE_UNFIXED || 'false' }}
+          exit-code: "1"
+
+      - name: Promote to production registry (by digest)
+        id: promote
+        run: |
+          set -euo pipefail
+          registry="${ACR_NAME}.azurecr.io"
+          if [ "$TARGET_ENV" = "prod" ] && [ -n "${PROD_ACR_NAME}" ]; then
+            az acr import --name "$PROD_ACR_NAME" \
+              --source "${registry}/${IMAGE_NAME}@${DIGEST}" \
+              --image "${IMAGE_NAME}:sha-${DIGEST:7:12}" --force > /dev/null
+            registry="${PROD_ACR_NAME}.azurecr.io"
+          fi
+          echo "image=${registry}/${IMAGE_NAME}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy (Azure Container Apps, by digest)
+        env:
+          IMAGE: ${{ steps.promote.outputs.image }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          APP_RG: ${{ vars.APP_RESOURCE_GROUP }}
+        run: |
+          set -euo pipefail
+          az containerapp update -n "$APP_NAME" -g "$APP_RG" --image "$IMAGE" > /dev/null
+          deployed=$(az containerapp show -n "$APP_NAME" -g "$APP_RG" --query "properties.template.containers[0].image" -o tsv)
+          [ "$deployed" = "$IMAGE" ] || { echo "::error::Deployed image does not match approved digest"; exit 1; }
+
+      - name: Smoke test
+        env:
+          HEALTH_URL: ${{ vars.APP_HEALTH_URL }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 20); do
+            if curl -fsS --max-time 5 -o /dev/null "$HEALTH_URL"; then echo "Healthy"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::Health check failed - roll back to the previous digest"; exit 1
+
+      - name: Deployment evidence
+        if: always()
+        env:
+          IMAGE: ${{ steps.promote.outputs.image }}
+        run: |
+          {
+            echo "### Deployment evidence"
+            echo "- Environment: \`${TARGET_ENV}\`"
+            echo "- Image: \`${IMAGE}\`"
+            echo "- Commit: \`${GITHUB_SHA}\` · Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } >> "$GITHUB_STEP_SUMMARY"

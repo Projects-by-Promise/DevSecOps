@@ -1,0 +1,15 @@
+# skills.md §14.2 - replace @your-org/... with real teams.
+# Changes to security-sensitive paths require security team review.
+/.github/                       @your-org/platform-security
+/.security/                     @your-org/platform-security
+/.gitleaks.toml                 @your-org/platform-security
+/.gitleaksignore                @your-org/platform-security
+/.trivyignore.yaml              @your-org/platform-security
+/trivy.yaml                     @your-org/platform-security
+/.checkov.yaml                  @your-org/platform-security
+/.tflint.hcl                    @your-org/platform-security
+/.hadolint.yaml                 @your-org/platform-security
+/infra/                         @your-org/platform-security @your-org/cloud-infra
+**/Dockerfile*                  @your-org/platform-security
+/SECURITY.md                    @your-org/platform-security
+/skills.md                      @your-org/platform-security

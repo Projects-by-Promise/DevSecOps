@@ -1,0 +1,16 @@
+# Shared Trivy configuration used by fs, config and image scans.
+severity:
+  - CRITICAL
+  - HIGH
+  - MEDIUM
+  - LOW
+scan:
+  skip-dirs:
+    - node_modules
+    - .terraform
+    - .git
+vulnerability:
+  ignore-unfixed: false        # reports keep everything; gates decide separately
+db:
+  no-progress: true
+ignorefile: .trivyignore.yaml

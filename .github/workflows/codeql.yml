@@ -1,0 +1,93 @@
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main, "release/**"]
+  push:
+    branches: [main, "release/**"]
+  schedule:
+    - cron: "27 3 * * 1"          # weekly, Monday 03:27 UTC – picks up new queries
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  detect:
+    name: Detect CodeQL languages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          langs=$(gh api "repos/${REPO}/languages" --jq 'keys[]')
+          include='[{"language":"actions","build-mode":"none"}]'
+          add() { include=$(jq -c --arg l "$1" --arg b "$2" '. + [{"language":$l,"build-mode":$b}] | unique_by(.language)' <<<"$include"); }
+          while IFS= read -r l; do
+            case "$l" in
+              JavaScript|TypeScript|Vue|Svelte) add javascript-typescript none ;;
+              Python)                           add python none ;;
+              C#)                               add csharp none ;;
+              Java|Kotlin)                      add java-kotlin none ;;
+              Go)                               add go autobuild ;;
+              Ruby)                             add ruby none ;;
+              Rust)                             add rust none ;;
+              C|C++)                            add c-cpp autobuild ;;
+              Swift)                            add swift autobuild ;;
+            esac
+          done <<<"$langs"
+          echo "Detected CodeQL targets: $include"
+          echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
+
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    needs: detect
+    runs-on: ${{ matrix.language == 'swift' && 'macos-latest' || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+      packages: read            # needed only for private CodeQL packs
+      security-events: write    # upload SARIF to Code Scanning
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit   # switch to 'block' with an allow-list once stable
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+
+      # Only used when a language is switched to build-mode: manual.
+      - name: Manual build
+        if: matrix.build-mode == 'manual'
+        run: |
+          echo "Replace with the project's build command discovered in Phase 0" >&2
+          exit 1
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

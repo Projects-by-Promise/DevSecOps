@@ -1,0 +1,7 @@
+vulnerabilities: []
+#  - id: CVE-2024-00000
+#    paths: ["package-lock.json"]
+#    expired_at: 2027-02-07
+#    statement: "EXC-0001 not reachable; see .security/exceptions.yaml"
+misconfigurations: []
+secrets: []

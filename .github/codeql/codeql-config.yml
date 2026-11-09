@@ -1,0 +1,25 @@
+name: "Security CodeQL config"
+
+# security-extended = default security queries + lower-precision security queries.
+# Use security-and-quality only if the team will triage quality alerts too.
+queries:
+  - uses: security-extended
+
+# Optional custom pack (see 5.5). Remove if not used.
+# packs:
+#   python:
+#     - ./.github/codeql/custom-queries/python
+
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/vendor/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/*.min.js"
+  - "**/test/fixtures/**"
+  # Do NOT ignore application test code wholesale without a reason; tests can leak secrets/SSRF helpers.
+
+# Exclude specific noisy queries ONLY with a documented exception id:
+# query-filters:
+#   - exclude:
+#       id: js/some-query-id     # EXC-0003

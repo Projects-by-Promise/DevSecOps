@@ -1,0 +1,59 @@
+name: Security Report
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"              # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  posture:
+    name: Weekly security posture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      security-events: read          # code scanning + Dependabot alerts
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Collect alert counts and SLA breaches (no secret values)
+        run: |
+          set -euo pipefail
+          sla='{"critical":3,"high":14,"medium":60,"low":180}'
+          cs=$(gh api --paginate "repos/${REPO}/code-scanning/alerts?state=open&per_page=100" \
+                 --jq '.[] | {sev: (.rule.security_severity_level // .rule.severity // "unknown"), created: .created_at}' | jq -s '.' || echo '[]')
+          db=$(gh api --paginate "repos/${REPO}/dependabot/alerts?state=open&per_page=100" \
+                 --jq '.[] | {sev: .security_advisory.severity, created: .created_at}' | jq -s '.' || echo '[]')
+          summarize() {
+            jq -r --argjson sla "$sla" '
+              def age: ((now - (.created | fromdateiso8601)) / 86400 | floor);
+              (group_by(.sev) | map("| \(.[0].sev) | \(length) | \(map(select(($sla[.sev] // 99999) < age)) | length) |") | .[])'
+          }
+          {
+            echo "## Weekly security posture – $(date -u +%F)"
+            echo ""
+            echo "### Code scanning (CodeQL, Trivy, Checkov, Gitleaks, …)"
+            echo "| Severity | Open | Past SLA |"; echo "|---|---|---|"
+            echo "$cs" | summarize
+            echo ""
+            echo "### Dependabot"
+            echo "| Severity | Open | Past SLA |"; echo "|---|---|---|"
+            echo "$db" | summarize
+            echo ""
+            echo "Secret scanning counts require a GitHub App token with *Secret scanning alerts: read*; see docs/security/DEVSECOPS.md."
+            echo ""
+            echo "Exceptions expiring within 14 days must be renewed or fixed."
+          } > report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create or update posture issue
+        run: |
+          set -euo pipefail
+          gh label create security-posture --repo "$REPO" --color B60205 2>/dev/null || true
+          num=$(gh issue list --repo "$REPO" --label security-posture --state open --json number --jq '.[0].number // empty')
+          if [ -n "$num" ]; then gh issue edit "$num" --repo "$REPO" --body-file report.md
+          else gh issue create --repo "$REPO" --title "Security posture report" --label security-posture --body-file report.md; fi

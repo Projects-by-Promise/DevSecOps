@@ -1,0 +1,45 @@
+title = "Repository Gitleaks configuration"
+
+[extend]
+# Start from Gitleaks' maintained default rules (AWS, Azure, GCP, GitHub, Slack,
+# private keys, JWTs, generic API keys, etc.)
+useDefault = true
+
+[[rules]]
+id = "azure-storage-connection-string"
+description = "Azure Storage account connection string with account key"
+regex = '''DefaultEndpointsProtocol=https?;AccountName=[a-z0-9]{3,24};AccountKey=[A-Za-z0-9+/]{86}=='''
+keywords = ["accountkey"]
+tags = ["azure", "cloud-credential"]
+
+[[rules]]
+id = "azure-sas-token"
+description = "Azure Shared Access Signature token"
+regex = '''(?i)[?&]sig=[A-Za-z0-9%+/=]{40,}'''
+keywords = ["sig="]
+tags = ["azure", "token"]
+
+[[rules]]
+id = "connection-string-password"
+description = "Database connection string with inline password"
+regex = '''(?i)(?:server|data source|host)=[^;]+;[^"'\n]*?(?:password|pwd)=([^;"'\s]{8,})'''
+secretGroup = 1
+keywords = ["password=", "pwd="]
+tags = ["database", "password"]
+
+[[rules]]
+id = "terraform-sensitive-default"
+description = "Hard-coded default for a Terraform variable that looks like a secret"
+regex = '''(?is)variable\s+"[^"]*(?:password|secret|token|key)[^"]*"\s*\{[^}]*default\s*=\s*"([^"]{8,})"'''
+secretGroup = 1
+keywords = ["password", "secret", "token", "key"]
+tags = ["terraform"]
+
+[allowlist]
+description = "Global allowlist – paths that never contain real secrets"
+paths = [
+  '''(^|/)\.gitleaks\.toml$''',
+  '''(^|/)docs/security/examples/''',
+  '''(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|go\.sum)$''',
+]
+# Do NOT allowlist test folders wholesale. Use .gitleaksignore fingerprints + EXC ids.

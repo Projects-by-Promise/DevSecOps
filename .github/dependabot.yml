@@ -1,0 +1,111 @@
+# Dependabot configuration generated from skills.md §6.2.
+# Only github-actions is active: the repository has no application code, Dockerfile or
+# Terraform yet. Run skills.md Phase 0 (§1.2) and uncomment ONLY the blocks for the
+# ecosystems it detects - an entry whose directory has no manifest makes Dependabot fail.
+version: 2
+
+# Private registries (only if the project uses them). Credentials come from
+# *Dependabot secrets* (Settings → Secrets → Dependabot), never Actions secrets.
+# registries:
+#   acr:
+#     type: docker-registry
+#     url: myregistry.azurecr.io
+#     username: ${{ secrets.ACR_DEPENDABOT_USER }}      # token-scoped, pull-only
+#     password: ${{ secrets.ACR_DEPENDABOT_TOKEN }}
+
+updates:
+  # ── GitHub Actions (always) ────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly", day: "monday", time: "05:00", timezone: "Africa/Lagos" }
+    open-pull-requests-limit: 5
+    commit-message: { prefix: "ci", include: "scope" }
+    labels: ["dependencies", "github-actions", "security-review"]
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
+
+  # ── Docker base images (if Dockerfiles exist) ──────────────────────────────
+  # - package-ecosystem: "docker"
+  #   directories: ["/", "/src/**"]           # adjust to Dockerfile locations from Phase 0
+  #   schedule: { interval: "weekly", day: "monday", time: "05:00", timezone: "Africa/Lagos" }
+  #   open-pull-requests-limit: 5
+  #   commit-message: { prefix: "build", include: "scope" }
+  #   labels: ["dependencies", "docker", "security-review"]
+  #   ignore:
+  #     # Major base-image jumps (e.g. OS release) are planned work, not auto-PRs.
+  #     - dependency-name: "*"
+  #       update-types: ["version-update:semver-major"]
+
+  # ── Docker Compose (if compose files exist) ────────────────────────────────
+  # - package-ecosystem: "docker-compose"
+  #   directory: "/"
+  #   schedule: { interval: "weekly" }
+  #   labels: ["dependencies", "docker"]
+
+  # ── Terraform providers & modules (if *.tf exists) ─────────────────────────
+  # - package-ecosystem: "terraform"
+  #   directories: ["/infra/**"]              # adjust to Terraform roots/modules
+  #   schedule: { interval: "weekly", day: "tuesday", time: "05:00", timezone: "Africa/Lagos" }
+  #   open-pull-requests-limit: 5
+  #   commit-message: { prefix: "infra", include: "scope" }
+  #   labels: ["dependencies", "terraform", "security-review"]
+  #   groups:
+  #     terraform-providers:
+  #       applies-to: version-updates
+  #       update-types: ["minor", "patch"]
+
+  # ── Application ecosystem: keep the block(s) matching Phase 0 ─────────────
+  # npm / yarn / pnpm
+  # - package-ecosystem: "npm"
+  #   directory: "/"
+  #   schedule: { interval: "daily", time: "05:00", timezone: "Africa/Lagos" }
+  #   open-pull-requests-limit: 10
+  #   versioning-strategy: increase-if-necessary
+  #   commit-message: { prefix: "deps", prefix-development: "deps-dev", include: "scope" }
+  #   labels: ["dependencies", "javascript"]
+  #   groups:
+  #     security-fixes:                # one PR per run for all security fixes
+  #       applies-to: security-updates
+  #       patterns: ["*"]
+  #     prod-minor-patch:
+  #       applies-to: version-updates
+  #       dependency-type: "production"
+  #       update-types: ["minor", "patch"]
+  #     dev-minor-patch:
+  #       applies-to: version-updates
+  #       dependency-type: "development"
+  #       update-types: ["minor", "patch"]
+
+  # Python (pip / pip-compile / poetry / pipenv) – use "uv" if uv.lock is present
+  # - package-ecosystem: "pip"
+  #   directory: "/"
+  #   schedule: { interval: "daily", time: "05:00", timezone: "Africa/Lagos" }
+  #   open-pull-requests-limit: 10
+  #   labels: ["dependencies", "python"]
+  #   groups:
+  #     security-fixes: { applies-to: security-updates, patterns: ["*"] }
+  #     minor-patch:    { applies-to: version-updates, update-types: ["minor", "patch"] }
+
+  # .NET
+  # - package-ecosystem: "nuget"
+  #   directory: "/"
+  #   schedule: { interval: "daily" }
+  #   open-pull-requests-limit: 10
+  #   labels: ["dependencies", "dotnet"]
+  #   groups:
+  #     security-fixes: { applies-to: security-updates, patterns: ["*"] }
+  #     microsoft:      { applies-to: version-updates, patterns: ["Microsoft.*", "System.*"], update-types: ["minor", "patch"] }
+
+  # Java
+  # - package-ecosystem: "maven"     # or "gradle"
+  #   directory: "/"
+  #   schedule: { interval: "daily" }
+  #   labels: ["dependencies", "java"]
+
+  # Go
+  # - package-ecosystem: "gomod"
+  #   directory: "/"
+  #   schedule: { interval: "daily" }
+  #   labels: ["dependencies", "go"]

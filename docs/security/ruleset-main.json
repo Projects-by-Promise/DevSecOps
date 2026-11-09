@@ -1,0 +1,48 @@
+{
+  "name": "protect-main-and-release",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": { "include": ["~DEFAULT_BRANCH", "refs/heads/release/**"], "exclude": [] }
+  },
+  "bypass_actors": [],
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "required_linear_history" },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": true,
+        "require_last_push_approval": true,
+        "required_review_thread_resolution": true
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          { "context": "sec-gitleaks" },
+          { "context": "sec-dependency-review" },
+          { "context": "sec-trivy-fs" },
+          { "context": "sec-ecosystem-audit" },
+          { "context": "sec-iac-scan" },
+          { "context": "sec-dockerfile-lint" },
+          { "context": "sec-image-scan" },
+          { "context": "sec-policy-checks" }
+        ]
+      }
+    },
+    {
+      "type": "code_scanning",
+      "parameters": {
+        "code_scanning_tools": [
+          { "tool": "CodeQL", "security_alerts_threshold": "high_or_higher", "alerts_threshold": "errors" }
+        ]
+      }
+    }
+  ]
+}

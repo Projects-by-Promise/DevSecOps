@@ -1,0 +1,21 @@
+# Risk-acceptance register (skills.md §4.5).
+# Every suppression (Trivy ignore, Checkov skip, Gitleaks fingerprint, dismissed alert)
+# MUST have an entry here. Max duration: Critical 30d, High 90d, Medium/Low 180d.
+# Validated by .github/scripts/validate_exceptions.py (security-policy.yml, deploy.yml).
+#
+# Entry format:
+#   - id: EXC-0001
+#     tool: trivy                  # trivy | checkov | gitleaks | codeql | dependency-review | hadolint
+#     finding: CVE-2024-00000      # CVE / GHSA / rule id / check id / fingerprint
+#     scope: "image or path / package@version"
+#     severity: HIGH
+#     justification: >
+#       Why the risk is acceptable, with evidence.
+#     compensating_controls: "..."
+#     owner: "@org/team-name"
+#     approved_by: "@security-approver"   # must differ from owner
+#     approved_on: 2026-11-09
+#     expires_on: 2027-02-07
+#     ticket: "SEC-123"
+version: 1
+exceptions: []

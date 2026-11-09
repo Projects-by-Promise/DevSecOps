@@ -1,0 +1,3 @@
+# Gitleaks fingerprints to ignore - fake test values only, never a real secret.
+# Format (one per line, with a registered exception id):
+#   <commit>:<file>:<rule-id>:<line>   # EXC-NNNN reason

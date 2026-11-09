@@ -1,0 +1,7 @@
+failure-threshold: warning
+trustedRegistries:
+  - mcr.microsoft.com
+  - docker.io            # remove if only internal/MCR images are allowed
+  - "*.azurecr.io"
+  - cgr.dev
+ignored: []              # any ignore needs an EXC id comment

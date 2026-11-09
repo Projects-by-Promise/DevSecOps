@@ -1,0 +1,214 @@
+name: IaC Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 3 * * 2"            # weekly: new policies against unchanged IaC
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to apply (infra-staging / infra-prod)"
+        type: choice
+        options: [infra-staging, infra-prod]
+
+permissions: {}
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  detect:
+    name: Detect Terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: { contents: read }
+    outputs:
+      present: ${{ steps.d.outputs.present }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - id: d
+        run: |
+          if git ls-files '*.tf' | grep -q .; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+
+  iac-static:
+    name: sec-iac-scan
+    needs: detect
+    if: needs.detect.outputs.present == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: terraform validate (no backend, no credentials)
+        env:
+          TF_ROOTS: ${{ vars.TF_ROOTS || 'infra' }}
+        run: |
+          set -euo pipefail
+          for d in $TF_ROOTS; do
+            echo "::group::validate $d"
+            terraform -chdir="$d" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="$d" validate -no-color
+            echo "::endgroup::"
+          done
+
+      - uses: terraform-linters/setup-tflint@v4
+        with: { tflint_version: v0.53.0 }
+      - name: TFLint
+        env:
+          GITHUB_TOKEN: ${{ github.token }}   # avoids plugin download rate limits
+        run: |
+          tflint --init --config "$PWD/.tflint.hcl"
+          tflint --recursive --config "$PWD/.tflint.hcl" --format compact
+
+      - name: Checkov (SARIF + gate)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          config_file: .checkov.yaml
+          output_format: cli,sarif
+          output_file_path: console,checkov.sarif
+      - name: Upload Checkov SARIF
+        if: always() && hashFiles('checkov.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: checkov.sarif, category: checkov }
+
+      - name: Trivy config (SARIF)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          trivy-config: trivy.yaml
+          format: sarif
+          output: trivy-iac.sarif
+          exit-code: "0"
+      - name: Upload Trivy IaC SARIF
+        if: always() && hashFiles('trivy-iac.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: trivy-iac.sarif, category: trivy-iac }
+      - name: Trivy config gate
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          trivy-config: trivy.yaml
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          skip-setup-trivy: true
+
+  plan:
+    name: iac-plan
+    needs: iac-static
+    # Same-repo PRs only: forks and Dependabot get no OIDC token / secrets.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: infra-plan          # federated subject: repo:<org>/<repo>:environment:infra-plan
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_ROOT: ${{ vars.TF_ROOT }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "~1.9", terraform_wrapper: false }
+      - name: terraform init
+        run: |
+          terraform -chdir="$TF_ROOT" init -input=false -lockfile=readonly \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=${{ vars.TF_ROOT }}.tfstate"
+      - name: terraform plan
+        run: |
+          set -euo pipefail
+          terraform -chdir="$TF_ROOT" plan -input=false -lock-timeout=5m -out=tfplan -no-color > /dev/null
+          terraform -chdir="$TF_ROOT" show -json tfplan > plan.json
+      - name: Checkov on plan (evaluates computed values)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          file: plan.json
+          framework: terraform_plan
+          output_format: cli
+      - name: Plan summary (counts only - no attribute values)
+        run: |
+          {
+            echo "### Terraform plan: \`${TF_ROOT}\`"
+            jq -r '[.resource_changes[] | .change.actions | join(",")] | group_by(.) | map("- \(.[0]): \(length)") | .[]' plan.json
+            echo ""
+            echo "Destroy/replace targets:"
+            jq -r '.resource_changes[] | select(.change.actions | index("delete")) | "- `\(.address)`"' plan.json
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove plan files
+        if: always()
+        run: rm -f "$TF_ROOT/tfplan" plan.json     # plans can contain sensitive values; never upload them
+
+  apply:
+    name: iac-apply
+    needs: iac-static
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'infra-dev' }}
+    concurrency:
+      group: terraform-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'infra-dev' }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_ROOT: ${{ vars.TF_ROOT }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "~1.9", terraform_wrapper: false }
+      - name: terraform init
+        run: |
+          terraform -chdir="$TF_ROOT" init -input=false -lockfile=readonly \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=${{ vars.TF_ROOT }}.tfstate"
+      - name: terraform plan (fresh) + policy check
+        run: |
+          set -euo pipefail
+          terraform -chdir="$TF_ROOT" plan -input=false -lock-timeout=5m -out=tfplan -no-color > /dev/null
+          terraform -chdir="$TF_ROOT" show -json tfplan > plan.json
+      - uses: bridgecrewio/checkov-action@v12
+        with: { file: plan.json, framework: terraform_plan, output_format: cli }
+      - name: terraform apply
+        run: terraform -chdir="$TF_ROOT" apply -input=false -lock-timeout=5m -no-color tfplan > /dev/null
+      - name: Cleanup
+        if: always()
+        run: rm -f "$TF_ROOT/tfplan" plan.json

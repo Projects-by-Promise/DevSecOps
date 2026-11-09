@@ -1,0 +1,16 @@
+framework:
+  - terraform
+  - terraform_plan
+  - dockerfile
+  - github_actions
+  - secrets
+directory:
+  - .
+skip-path:
+  - .terraform
+  - node_modules
+download-external-modules: false   # set true only for trusted, pinned registry modules
+compact: true
+quiet: true                        # show failures only
+# Global skips are discouraged; prefer inline:  #checkov:skip=CKV_AZURE_XX:EXC-0002 reason
+skip-check: []
