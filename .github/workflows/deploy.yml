@@ -37,7 +37,7 @@ jobs:
     steps:
       - name: Download digest from triggering run
         if: github.event_name == 'workflow_run'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: image-digest
           run-id: ${{ github.event.workflow_run.id }}
