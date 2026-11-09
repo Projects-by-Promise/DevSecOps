@@ -50,7 +50,7 @@ jobs:
         with: { persist-credentials: false }
 
       - name: Trivy fs - full report (SARIF, all severities)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -68,7 +68,7 @@ jobs:
           category: trivy-fs
 
       - name: Trivy fs - JSON report
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -80,7 +80,7 @@ jobs:
           skip-setup-trivy: true
 
       - name: Trivy fs - severity gate
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
