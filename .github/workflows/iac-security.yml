@@ -4,8 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
-  schedule:
-    - cron: "30 3 * * 2"            # weekly: new policies against unchanged IaC
+  #schedule:
+    #- cron: "30 3 * * 2"            # weekly: new policies against unchanged IaC
   workflow_dispatch:
     inputs:
       environment:
