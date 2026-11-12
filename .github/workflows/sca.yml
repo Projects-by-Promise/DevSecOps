@@ -4,8 +4,8 @@ on:
   pull_request:
   push:
     branches: [main, "release/**"]
-  schedule:
-    - cron: "15 4 * * *"            # daily: new CVEs against unchanged code
+  #schedule:
+    #- cron: "15 4 * * *"            # daily: new CVEs against unchanged code
   workflow_dispatch:
 
 permissions: {}
