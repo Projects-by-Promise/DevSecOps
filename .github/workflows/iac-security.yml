@@ -28,7 +28,7 @@ jobs:
     outputs:
       present: ${{ steps.d.outputs.present }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { persist-credentials: false }
       - id: d
         run: |
@@ -44,7 +44,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { persist-credentials: false }
 
       - uses: hashicorp/setup-terraform@v3
@@ -133,7 +133,7 @@ jobs:
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       TF_ROOT: ${{ vars.TF_ROOT }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { persist-credentials: false }
       - uses: hashicorp/setup-terraform@v3
         with: { terraform_version: "~1.9", terraform_wrapper: false }
@@ -189,7 +189,7 @@ jobs:
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       TF_ROOT: ${{ vars.TF_ROOT }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { persist-credentials: false }
       - uses: hashicorp/setup-terraform@v3
         with: { terraform_version: "~1.9", terraform_wrapper: false }

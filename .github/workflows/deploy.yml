@@ -77,7 +77,7 @@ jobs:
       PROD_ACR_NAME: ${{ vars.PROD_ACR_NAME }}
       IMAGE_NAME: ${{ vars.IMAGE_NAME }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { persist-credentials: false }
 
       - name: Azure login (OIDC, environment-scoped identity)
