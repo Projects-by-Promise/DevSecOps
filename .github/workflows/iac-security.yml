@@ -84,7 +84,7 @@ jobs:
           output_file_path: console,checkov.sarif
       - name: Upload Checkov SARIF
         if: always() && hashFiles('checkov.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with: { sarif_file: checkov.sarif, category: checkov }
 
       - name: Trivy config (SARIF)
@@ -98,7 +98,7 @@ jobs:
           exit-code: "0"
       - name: Upload Trivy IaC SARIF
         if: always() && hashFiles('trivy-iac.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with: { sarif_file: trivy-iac.sarif, category: trivy-iac }
       - name: Trivy config gate
         uses: aquasecurity/trivy-action@v0.36.0
