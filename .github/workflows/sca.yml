@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { persist-credentials: false }
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: ${{ vars.SEC_DEP_REVIEW_FAIL_SEVERITY || 'high' }}
           fail-on-scopes: runtime, development
