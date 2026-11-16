@@ -24,7 +24,7 @@ jobs:
       contents: read
       pull-requests: write          # PR summary comment
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { persist-credentials: false }
       - uses: actions/dependency-review-action@v4
         with:
@@ -46,7 +46,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { persist-credentials: false }
 
       - name: Trivy fs - full report (SARIF, all severities)
@@ -111,7 +111,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { persist-credentials: false }
       # Keep ONLY the steps for ecosystems detected in Phase 0; pin tool versions.
       - name: npm audit
